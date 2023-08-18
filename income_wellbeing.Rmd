@@ -1,0 +1,340 @@
+---
+title: "Income and well-being: not resolved"
+author: "Ruben Arslan"
+date: "2023-08-14"
+output: 
+  pdf_document: 
+    toc: yes
+    number_sections: yes
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F)
+```
+
+```{r load}
+library(tidyverse)
+library(brms)
+options(mc.cores = parallel::detectCores() - 4,
+        brms.backend = "cmdstanr",
+        brms.file_refit = "never")
+
+esd <- rio::import("https://osf.io/download/kpnjf/", format = "csv") %>%
+  tibble()
+```
+
+# Within-subject SDs
+```{r}
+killingsworth_within_subject_sds <- readr::read_csv("
+log_income, within_subject_sd
+9.623577235772357, 19.359504132231404
+10.117886178861788, 19.02892561983471
+10.46910569105691, 19.27685950413223
+10.70650406504065, 18.946280991735534
+10.911382113821137, 18.67768595041322
+11.012195121951219, 18.4297520661157
+11.236585365853658, 18.471074380165287
+11.347154471544716, 18.636363636363633
+11.454471544715446, 18.4297520661157
+11.630081300813007, 18.34710743801653
+11.831707317073171, 18.471074380165287
+12.075609756097561, 18.18181818181818
+12.433333333333334, 17.789256198347104
+12.891869918699186, 18.161157024793386
+13.353658536585366, 17.913223140495866
+")
+
+library(ggplot2)
+library(tidyverse)
+ggplot(killingsworth_within_subject_sds, 
+       aes(log_income, log(within_subject_sd))) +
+  geom_point() +
+  scale_y_continuous("Within-subject SD of happiness", 
+                     breaks = log(c(18, 18.5, 19, 19.5)), 
+                     labels = c(18, 18.5, 19, 19.5)) +
+  scale_x_continuous("Gross annual household income (in thousands)", 
+                     breaks = log(c(20000, 50000, 100000, 200000, 500000)), 
+                     labels = c(20, 50, 100, 200, 500)) +
+  theme_bw()
+
+lm(log(within_subject_sd) ~ log_income, killingsworth_within_subject_sds)
+ggsave("Figure2.pdf", width = 9, height = 6, units = "cm", scale = 2)
+# ggsave("Figure2.png", width = 7.5, height = 6)
+
+```
+
+
+# Simulation
+```{r}
+# load empirical pattern reported in Kahneman & Deaton 2010
+kd_graph <- readr::read_csv("income, happy
+9025.71216506263, 0.7050113895216401
+17530.402913291244, 0.7815489749430525
+29410.63692902389, 0.8298405466970389
+41390.388056412914, 0.8544419134396356
+53873.56232388553, 0.8681093394077449
+73629.38698516181, 0.8763097949886106
+103620.6358613122, 0.8845102505694762
+198333.86843073, 0.8890660592255126
+")
+
+set.seed(102019)
+n <- 500000
+b0 <- -4           # intercept of latent happiness
+b <- 0.50           # effect of log income on happiness
+b0_sigma <- 0.30 # intercept for the log standard deviation
+b_sigma <- -0.05   # decrease of within-subject SD with log income
+                   # ca double the observed relationship in Killingsworth's data
+                   # reflecting my assumption that that estimate is attenuated 
+                   # by measurement error
+misclassif <- .11  # misclassification rate yes/no in outcome
+
+simulated_data <- tibble(
+  income = sample(kd_graph$income, size = n, replace = T), # uniform distribution
+  log_income = log(income),
+  # latent happiness is normally distributed as a function of log income, varies
+  # less within-subject at higher log incomes
+  happiness = rnorm(n = n, 
+                    mean = b0 + b * log_income,
+                    sd = exp(b0_sigma + b_sigma * log_income)),
+  # to obtain measured happiness, we assume people introspect with error
+  happiness_m = happiness + rnorm(n, 0, 1.3),
+  # they decide their binary yes/no response based on this introspection
+  happiness_b = if_else(happiness < 0, 0, 1),
+  # this response is sometimes misreported/misclassified
+  happiness_bm = if_else(runif(n) < misclassif, 1 - happiness_b, happiness_b)
+)
+
+simulated_data_aggregated <- simulated_data %>% group_by(log_income, income) %>% 
+  summarise(happiness_bm = mean(happiness_bm))
+simulated_data_aggregated <- simulated_data_aggregated %>% left_join(kd_graph)
+
+ggplot(simulated_data_aggregated %>% 
+         select(`Kahneman & Deaton, 2010` = happy, 
+                `Simulated data` = happiness_bm, log_income) %>% 
+         pivot_longer(-log_income), 
+       aes(log_income, value, color = name, shape = name)) + 
+  geom_point() + 
+  geom_line() +
+  scale_x_continuous("Gross annual household income (in thousands)", 
+                     breaks = log(c(10000,20000,40000,80000,160000)), 
+                     labels = c(10, 20, 40, 80, 160), 
+                     limits = log(c(9000, 1000000))) +
+  scale_color_viridis_d(end = 0.6, guide = "none") + 
+  ggrepel::geom_text_repel(aes(
+    label = if_else(log_income > 12, name, NA_character_), x = log(400000)), 
+    size = 4, hjust = 0) +
+  ylab("Positive affect") +
+  scale_shape(guide = "none") +
+  theme_bw()
+```
+
+
+# Reanalysis
+
+## Model comparison
+```{r}
+m_homoskedasticity <- brm(wellbeing ~ log_income, data = esd, 
+                          file = "m_homoskedasticity") %>% 
+  add_criterion("loo")
+m_continuous_var_increase <- brm(bf(
+  wellbeing ~ log_income,
+  sigma ~ log_income), data = esd, 
+  file = "m_continuous_var_increase") %>% 
+  add_criterion("loo")
+m_flattening_at_100 <- brm(bf(
+  wellbeing ~ log_income + log_income: income_above_100,
+  sigma ~ log_income + log_income: income_above_100 ), data = esd,
+  file = "m_flattening_at_100") %>% 
+  add_criterion("loo")
+m_spline_sigma <- brm(bf(wellbeing ~ log_income,
+             sigma ~ s(log_income)), data = esd, file = "m_spline_sigma") %>% 
+  add_criterion("loo")
+m_spline_mu_sigma <- brm(bf(wellbeing ~ s(log_income),
+             sigma ~ s(log_income)), data = esd,
+             control = list(adapt_delta = 0.99), 
+             file = "m_spline_mu_sigma") %>% 
+  add_criterion("loo")
+
+loo_compare(m_homoskedasticity, m_continuous_var_increase, m_flattening_at_100, 
+            m_spline_sigma, m_spline_mu_sigma)
+loo_compare(m_homoskedasticity, m_flattening_at_100)
+loo_compare(m_continuous_var_increase, m_flattening_at_100)
+loo_compare(m_homoskedasticity, m_continuous_var_increase)
+loo_compare(m_homoskedasticity, m_spline_sigma)
+```
+
+The threshold model barely outperforms the simple model assuming homoskedasticity in LOO. The spline model does better but actually shows an increase in variability at low incomes.
+
+```{r}
+mus <- fitted(m_spline_sigma, 
+              newdata = esd %>% distinct(log_income), summary = T, dpar = "mu")
+sigmas <- fitted(m_spline_sigma, 
+                 newdata = esd %>% distinct(log_income), summary = T, dpar = "sigma")
+plotdata <- tibble(
+  log_income = esd %>% distinct(log_income) %>% pull(log_income),
+  mu = mus[,"Estimate"], 
+  sigma = sigmas[,"Estimate"])
+
+ggplot(plotdata, 
+       aes(log_income, y = mu, ymin = mu - sigma, ymax = mu + sigma)) + 
+  geom_smooth(stat = "identity")
+
+ggplot(plotdata, aes(log_income, y = sigma)) + 
+  geom_smooth(stat = "identity") + 
+  geom_point() +
+  scale_x_continuous("Gross annual household income (in thousands)", 
+                     breaks = log(c(20000, 50000, 100000, 200000, 500000)), 
+                     labels = c(20, 50, 100, 200, 500)) +
+  ylab("Spread") +
+  theme_bw()
+
+ggplot(plotdata,
+       aes(log_income, y = mu)) + geom_line() +
+  scale_x_continuous("Gross annual household income (in thousands)", 
+                     breaks = log(c(20000, 50000, 100000, 200000, 500000)), 
+                     labels = c(20, 50, 100, 200, 500)) +
+  geom_line(aes(y = mu + qnorm(0.15)*sigma)) +
+  geom_line(aes(y = mu + qnorm(0.30)*sigma)) +
+  geom_line(aes(y = mu + qnorm(0.70)*sigma)) +
+  geom_line(aes(y = mu + qnorm(0.85)*sigma)) +
+  ylab("Happiness (0 to 100)") +
+  geom_text(aes(
+    x = if_else(round(log_income,1)==10.9, 10.9, NA_real_), 
+    y = 0.9 + mu + qnorm(0.15)*sigma), label = "15%") +
+  geom_text(aes(
+    x = if_else(round(log_income,1)==10.9, 10.9, NA_real_), 
+    y = 0.9 + mu + qnorm(0.30)*sigma), label = "30%") +
+  geom_text(aes(
+    x = if_else(round(log_income,1)==10.9, 10.9, NA_real_), 
+    y = 0.9 + mu), label = "50%") +
+  geom_text(aes(
+    x = if_else(round(log_income,1)==10.9, 10.9, NA_real_),
+    y = 0.9 + mu + qnorm(0.70)*sigma), label = "70%") +
+  geom_text(aes(
+    x = if_else(round(log_income,1)==10.9, 10.9, NA_real_), 
+    y = 0.9 + mu + qnorm(0.85)*sigma), label = "85%") +
+  geom_vline(xintercept = log(100000), linetype = "dashed") +
+  theme_bw()
+```
+
+
+## Spline quantile plot
+```{r}
+quantiles <- c(0.05, 0.10, 0.15, 0.20, 0.25, 0.3, 0.35, 0.5, 0.7, 0.85, 0.95)
+
+fit_model <- function(qu) {
+  brm(
+    bf(wellbeing ~ s(log_income), quantile = qu),
+    data = esd, family = asym_laplace(),
+    control = list(adapt_delta = 0.99),
+    file = str_c("m_spline_q", qu)
+  ) %>% add_criterion("loo")
+}
+
+fits <- tibble(
+  quantile = quantiles
+) %>%
+  mutate(
+    m = map(quantile, fit_model)
+  )
+
+
+fit_linear_model <- function(qu) {
+  brm(
+    bf(wellbeing ~ log_income, quantile = qu),
+    data = esd, family = asym_laplace(),
+    file = str_c("m_linear_q", qu)
+  ) %>% add_criterion("loo")
+}
+
+fits2 <- tibble(
+  quantile = quantiles
+) %>%
+  mutate(
+    m = map(quantile, fit_linear_model)
+  )
+
+
+
+
+predict_mu_model <- function(model) {
+  fits <- fitted(model, newdata = esd %>% 
+                   distinct(log_income) %>% 
+                   arrange(log_income), 
+                 summary = F, ndraws = 50, dpar = "mu") %>% as_tibble()
+  colnames(fits) <- esd %>% distinct(log_income) %>% 
+    arrange(log_income) %>% pull(log_income)
+  fits$sample <- 1:nrow(fits)
+
+  fits %>% pivot_longer(-sample, names_to = "log_income", values_to = "mu") %>%
+    mutate(log_income = as.numeric(log_income))
+}
+fits3 <- fits %>% mutate(
+  spaghetti = m %>% map(predict_mu_model)
+)
+
+predict_mu_model_summarize <- function(model) {
+  fits <- fitted(model, newdata = esd %>% 
+                   distinct(log_income) %>% 
+                   arrange(log_income), 
+                 summary = T, ndraws = 30, dpar = "mu") %>% as_tibble()
+  fits$log_income <- esd %>% distinct(log_income) %>% 
+    arrange(log_income) %>% pull(log_income)
+
+  fits %>% select(log_income, mu = Estimate)
+}
+fits_linear <- fits2 %>% mutate(
+  spaghetti = m %>% map(predict_mu_model_summarize)
+)
+
+fits_linear <- fits_linear %>% select(-m) %>%
+  unnest(spaghetti)
+
+summarise_loo_comp <- function(m_linear, m_spline) {
+  comp <- loo_compare(m_linear, m_spline)
+  best_mod <- rownames(comp)[1]
+  elpd_diff <- comp[2,1]
+  se_diff <- comp[2,2]
+  elpd_diff <- if_else(best_mod == "m_linear", -1, 1) * elpd_diff
+  sprintf("%.1f±%.1f", elpd_diff, se_diff)
+}
+fits_both <- fits %>% left_join(fits2, by = "quantile", 
+                                suffix = c("_spline", "_linear"))
+fits_both <- fits_both %>% rowwise() %>% 
+  mutate(elpd_loo = summarise_loo_comp(m_linear, m_spline))
+
+fits3 %>%
+  select(-m) %>%
+  unnest(spaghetti, names_repair = "universal") %>%
+  ggplot(aes(log_income, mu, group = interaction(quantile,sample))) +
+  geom_line(alpha = 0.1, color = "#697f1f") +
+  geom_line(aes(log_income, mu, group = quantile), 
+            alpha = 1, color = 'black', data = fits_linear) +
+  scale_x_continuous("Gross annual household income (in thousands)", 
+                     breaks = log(c(20000, 50000, 100000, 200000, 500000)), 
+                     labels = c(20, 50, 100, 200, 500), 
+                     limits = log(c(15000, 1200000))) +
+  geom_text(aes(
+    label = str_c(quantile*100, "%; loo=", elpd_loo), group = 1), 
+    data = fits_linear %>% 
+      group_by(quantile) %>% 
+      filter(log_income == max(log_income)) %>% 
+      ungroup() %>% 
+      left_join(fits_both %>% select(quantile, elpd_loo)), 
+    hjust = 0, nudge_x = 0.03, size = 3.3) +
+  ylab("Happiness (0 to 100)") +
+  geom_vline(xintercept = log(100000), linetype = "dashed") +
+  theme_bw()
+ggsave("Figure1.pdf", width = 9, height = 6, units = "cm", scale = 2)
+# ggsave("Figure1.png", width = 7.5, height = 6)
+```
+
+
+# Version info
+```{r}
+sessionInfo()
+```
+
+
