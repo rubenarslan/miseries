@@ -1,0 +1,82 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+editor_options:
+  chunk_output_type: inline
+---
+
+
+```{r}
+library(tidyverse)
+gfs <- rio::import('gfs_sweden_w1_perturbed_randomized_sample.csv')
+gfs_labels <- rio::import("https://docs.google.com/spreadsheets/d/1vC9veuZ6kOvICwRdmCOo5GpoRJrwCLmL/edit#gid=1598934750")
+gfs_var_labels <- gfs_labels$var_label
+names(gfs_var_labels) <- gfs_labels$variable
+library(labelled)
+var_label(gfs) <- gfs_var_labels
+
+library(codebook)
+
+non_na <- gfs %>% summarise_all(~ any(!is.na(.))) %>% 
+    pivot_longer(everything()) %>% 
+  filter(value)
+
+gfs <- gfs %>% select(non_na$name)
+
+
+value_labels <- gfs_labels %>% select(variable, labels) %>% 
+  rowwise() %>% 
+  mutate(labs = str_split(labels, "; (?=[-0-9])")) %>% 
+  unnest_longer(labs) %>% 
+  select(-labels) %>% 
+  separate(labs, c("value", "label"), sep = " = ") # positive lookahead to ensure number
+
+value_labels_list <- value_labels %>% group_by(variable) %>% 
+  filter(sum(!is.na(label)) > 0) %>% 
+  summarise(list = enframe(value, label)))
+value_labels_list[1,2][[1]]
+
+
+value_labels_list <- value_labels %>% group_by(variable) %>% 
+  filter(sum(!is.na(label)) > 0) %>% 
+  group_split() %>% 
+  map(. %>% select(value, label) %>% dict_to_list)
+
+
+to_named_vector <- function(data) {
+  name <- as(data$value, data$type[1])
+  names(name) <- data$label
+  name
+}
+value_labels_list <- value_labels %>% 
+  group_by(variable) %>% 
+  filter(sum(!is.na(label)) > 0) %>% 
+  inner_join(
+    gfs %>% summarise_all(typeof) %>%
+      pivot_longer(everything(), names_to = "variable", values_to = "type"),
+    by = "variable") %>%
+  nest() %>% 
+  mutate(data = lapply(data, to_named_vector)) %>% 
+  deframe()
+
+val_labels(gfs) <- value_labels_list
+
+
+gfs <- detect_missing(gfs, negative_values_are_missing = T, ninety_nine_problems = T, only_labelled = T, learn_from_labels = T, use_labelled_spss = T, vars = "ABUSED")
+saveRDS(gfs, "gfs.rds")
+debug(detect_missing)
+table(gfs$ABUSED)
+```
+
+```{r}
+codebook(gfs)
+```
+
+
+## provided codebook
+```{r}
+DT::datatable(gfs_labels)
+```
+
