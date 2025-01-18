@@ -55,7 +55,8 @@ ggplot(killingsworth_within_subject_sds,
                      labels = c(18, 18.5, 19, 19.5)) +
   scale_x_continuous("Gross annual household income", 
                      breaks = log(c(20000, 50000, 100000, 200000, 500000)), 
-                     labels = c("20,000", "50,000", "100,000", "200,000", "500,000")) +
+                     labels = c("20,000", "50,000", "100,000", 
+                                "200,000", "500,000")) +
   theme_bw()
 
 lm(log(within_subject_sd) ~ log_income, killingsworth_within_subject_sds)
@@ -119,7 +120,8 @@ ggplot(simulated_data_aggregated %>%
   geom_line() +
   scale_x_continuous("Gross annual household income", 
                      breaks = log(c(20000, 50000, 100000, 200000, 500000)), 
-                     labels = c("20,000", "50,000", "100,000", "200,000", "500,000"), 
+                     labels = c("20,000", "50,000", "100,000", 
+                                "200,000", "500,000"), 
                      limits = log(c(9000, 1000000))) +
   scale_color_viridis_d(end = 0.6, guide = "none") + 
   ggrepel::geom_text_repel(aes(
@@ -169,9 +171,11 @@ The threshold model barely outperforms the simple model assuming homoskedasticit
 
 ```{r}
 mus <- fitted(m_spline_sigma, 
-              newdata = esd %>% distinct(log_income), summary = T, dpar = "mu")
+              newdata = esd %>% distinct(log_income), 
+              summary = T, dpar = "mu")
 sigmas <- fitted(m_spline_sigma, 
-                 newdata = esd %>% distinct(log_income), summary = T, dpar = "sigma")
+                 newdata = esd %>% distinct(log_income), 
+                 summary = T, dpar = "sigma")
 plotdata <- tibble(
   log_income = esd %>% distinct(log_income) %>% pull(log_income),
   mu = mus[,"Estimate"], 
@@ -186,7 +190,8 @@ ggplot(plotdata, aes(log_income, y = sigma)) +
   geom_point() +
   scale_x_continuous("Gross annual household income", 
                      breaks = log(c(20000, 50000, 100000, 200000, 500000)), 
-                     labels = c("20,000", "50,000", "100,000", "200,000", "500,000")) +
+                     labels = c("20,000", "50,000", "100,000", 
+                                "200,000", "500,000")) +
   ylab("Spread") +
   theme_bw()
 
@@ -194,7 +199,8 @@ ggplot(plotdata,
        aes(log_income, y = mu)) + geom_line() +
   scale_x_continuous("Gross annual household income", 
                      breaks = log(c(20000, 50000, 100000, 200000, 500000)), 
-                     labels = c("20,000", "50,000", "100,000", "200,000", "500,000")) +
+                     labels = c("20,000", "50,000", "100,000",
+                                "200,000", "500,000")) +
   geom_line(aes(y = mu + qnorm(0.15)*sigma)) +
   geom_line(aes(y = mu + qnorm(0.30)*sigma)) +
   geom_line(aes(y = mu + qnorm(0.70)*sigma)) +
@@ -344,7 +350,8 @@ fits3 %>%
             alpha = 1, color = 'black', data = fits_linear) +
   scale_x_continuous("Gross annual household income", 
                      breaks = log(c(20000, 50000, 100000, 200000, 500000)), 
-                     labels = c("20,000", "50,000", "100,000", "200,000", "500,000"), 
+                     labels = c("20,000", "50,000", "100,000", 
+                                "200,000", "500,000"), 
                      limits = log(c(15000, 1200000))) +
   geom_text(aes(
     label = str_c(quantile*100, "%; loo=", elpd_loo), group = 1), 
@@ -372,7 +379,8 @@ fits_nonlinear_cis %>%
             alpha = 1, color = 'black', data = fits_linear) +
   scale_x_continuous("Gross annual household income", 
                      breaks = log(c(20000, 50000, 100000, 200000, 500000)), 
-                     labels = c("20,000", "50,000", "100,000", "200,000", "500,000"), 
+                     labels = c("20,000", "50,000", "100,000", 
+                                "200,000", "500,000"), 
                      limits = log(c(15000, 1200000))) +
   geom_text(aes(
     label = str_c(quantile*100, "%; loo=", elpd_loo), group = 1), 
@@ -388,61 +396,26 @@ fits_nonlinear_cis %>%
 ggsave("Figure1_bands.pdf", width = 9, height = 6, units = "cm", scale = 2)
 ```
 
-
-# Version info
-```{r}
-sessionInfo()
-```
-
+## Comparison to (dis)continuous segmented regression
 
 ```{r}
-
-library('quantreg')
-
-below100k <- subset(esd, income_above_100 == 0)
-above100k <- subset(esd, income_above_100 == 1)
-
-# Figure 2 slopes
-taus <- c(0.15, 0.30, 0.5, 0.70, 0.85)
-below100fit <- (rq(wellbeing ~ log_income, below100k, tau = taus))
-summary(below100fit)
-above100fit <- (rq(wellbeing ~ log_income, above100k, tau = taus))
-summary(above100fit)
-
-taus <- c(0.15, 0.30, 0.5, 0.70, 0.85)
-below100fit <- (rq(wellbeing ~ log_income, below100k, tau = .15))
-summary(below100fit)
-above100fit <- (rq(wellbeing ~ log_income, above100k, tau = .15))
-summary(above100fit)
-
-intfit <- (rq(wellbeing ~ log_income + income_above_100:log_income , esd, tau = quantiles))
-summary(intfit)
-
-intfit <- (rq(wellbeing ~ log_income + income_above_100:log_income , esd, tau = .85))
-summary(intfit)
-
-intfit <- (rq(wellbeing ~ log_income + income_above_100:log_income + income_above_100, esd, tau = .15))
-summary(intfit)
-
-intfit <- (rq(wellbeing ~ factor(round(log_income, 1)), esd, tau = .15))
-summary(intfit)
-
-```
-
-```{r}
+library(quantreg)
 segmented_rq <- (rq(wellbeing ~ log_income + income_above_100:log_income, esd, tau = quantiles))
 
 jump_rq <- (rq(wellbeing ~ log_income + income_above_100:log_income + income_above_100, esd, tau = quantiles))
 
-newd <- esd %>% distinct(log_income, income_above_100) %>% mutate(row = row_number())
-fits_segmented <- predict(segmented_rq, newdata = esd %>% distinct(log_income, income_above_100)) %>% 
+newd <- esd %>% distinct(log_income, income_above_100) %>% 
+  mutate(row = row_number())
+fits_segmented <- predict(segmented_rq, newdata = esd %>% 
+    distinct(log_income, income_above_100)) %>% 
   as_tibble(rownames = "row") %>% 
   pivot_longer(-row) %>% 
   mutate(row = as.integer(row)) %>% 
   left_join(newd) %>% 
   mutate(quantile = as.numeric(str_sub(name, 5)))
 
-newd <- esd %>% distinct(log_income, income_above_100) %>% mutate(row = row_number())
+newd <- esd %>% distinct(log_income, income_above_100) %>% 
+  mutate(row = row_number())
 fits_jump <- predict(jump_rq, newdata = newd) %>% 
   as_tibble(rownames = "row") %>% 
   pivot_longer(-row) %>% 
@@ -450,7 +423,9 @@ fits_jump <- predict(jump_rq, newdata = newd) %>%
   left_join(newd) %>% 
   mutate(quantile = as.numeric(str_sub(name, 5)))
 
-newd <- esd %>% distinct(log_income) %>% filter(log_income > 11.4) %>%  mutate(income_above_100 = 1) %>% mutate(row = row_number())
+newd <- esd %>% distinct(log_income) %>% filter(log_income > 11.4) %>%  
+  mutate(income_above_100 = 1) %>% mutate(row = row_number())
+
 fits_jump_extrapolated <- predict(jump_rq, newdata = newd) %>% 
   as_tibble(rownames = "row") %>% 
   pivot_longer(-row) %>% 
@@ -470,11 +445,14 @@ predict_mu_model <- function(model) {
   fits %>% pivot_longer(-sample, names_to = "log_income", values_to = "mu") %>%
     mutate(log_income = as.numeric(log_income))
 }
+
 fits3 <- fits %>% mutate(
   spaghetti = m %>% map(predict_mu_model)
 )
 
-ns_by_inc <-  esd %>% mutate(income = exp(log_income)) %>% group_by(income, log_income) %>% 
+ns_by_inc <-  esd %>% 
+  mutate(income = exp(log_income)) %>% 
+  group_by(income, log_income) %>% 
   summarise(n = n(),q = quantile(wellbeing, probs = .15) %>% as.vector(),
             n15 = sum(wellbeing <= q))
 
@@ -484,9 +462,10 @@ fits3 %>%
   unnest(spaghetti, names_repair = "universal") %>%
   ggplot(aes(log_income, mu, group = interaction(quantile,sample))) +
   geom_line(alpha = 0.01, color = "#697f1f", linewidth = 0.2) +
-  geom_point(aes(log_income, q, size = (n15), group = q), data = ns_by_inc, color = "gray",
-             alpha = 0.9) +
-  geom_smooth(aes(log_income, mu, group = quantile, ymin = `Q2.5`, ymax = `Q97.5`), 
+  geom_point(aes(log_income, q, size = (n15), group = q), data = 
+               ns_by_inc, color = "gray", alpha = 0.9) +
+  geom_smooth(aes(log_income, mu, group = quantile, 
+                  ymin = `Q2.5`, ymax = `Q97.5`), 
               stat = "identity",
             linewidth = 1.2, 
             alpha = 0.2, color = 'black', data = fits_linear %>%
@@ -496,42 +475,40 @@ fits3 %>%
   # filter(quantile == .15)) +
   geom_line(aes(log_income, value, group = quantile), 
             linewidth = 0.9, 
-            alpha = 1, color = '#008da8', linetype = 'dotted', data = fits_jump_extrapolated %>%
-  filter(quantile == .15)) +
+            alpha = 1, color = '#008da8', linetype = 'dotted', 
+            data = fits_jump_extrapolated %>%
+              filter(quantile == .15)) +
   geom_line(aes(log_income, value, group = quantile), 
             linewidth = 1.2, 
-            alpha = 0.5, color = '#008da8', data = fits_jump_extrapolated %>%
-  filter(quantile == .15)) +
+            alpha = 0.5, color = '#008da8', 
+            data = fits_jump_extrapolated %>%
+              filter(quantile == .15)) +
   geom_line(aes(log_income, value, group = quantile), 
             linewidth = 1.2, 
-            alpha = 1, color = '#008da8', data = fits_jump %>% filter(income_above_100 == 0) %>%
-  filter(quantile == .15)) +
+            alpha = 1, color = '#008da8', 
+            data = fits_jump %>% 
+              filter(income_above_100 == 0) %>%
+              filter(quantile == .15)) +
   geom_line(aes(log_income, value, group = quantile), 
             linewidth = 1.2, 
-            alpha = 1, color = '#008da8', data = fits_jump %>% filter(income_above_100 == 1) %>%
-  filter(quantile == .15)) +
+            alpha = 1, color = '#008da8', 
+            data = fits_jump %>% 
+              filter(income_above_100 == 1) %>%
+              filter(quantile == .15)) +
   scale_x_continuous("Gross annual household income", 
                      breaks = log(c(20000, 50000, 100000, 200000, 500000)), 
-                     labels = c("20,000", "50,000", "100,000", "200,000", "500,000"), 
+                     labels = c("20,000", "50,000", "100,000", 
+                                "200,000", "500,000"), 
                      limits = log(c(15000, 650000))) +
   annotate("text", label = "Bayesian linear model", color = "black",
            x = log(150000), y = 54.2, size = 3, hjust = 0) +
-  # annotate("text", label = "Segmented regression\nwithout discontinuity", color = "brown",
-  #          x = log(650000), y = 55, size = 2, hjust = 0) +
-  annotate("text", label = "Segmented regression\nwith sudden jump", color = "#008da8",
+  annotate("text", label = "Segmented regression\nwith sudden jump", 
+           color = "#008da8",
            x = log(90000), y = 52.7, size = 3, hjust = 1) +
-  annotate("text", label = "Bayesian nonlinear\nspline model", color = "#697f1f",
+  annotate("text", label = "Bayesian nonlinear\nspline model", 
+           color = "#697f1f",
            x = log(250000), y = 52, size = 3, hjust = 0) +
   scale_size_area(max_size = 6) +
-  # geom_text(aes(
-  #   label = str_c(quantile*100, "%; loo=", elpd_loo), group = 1), 
-  #   data = fits_linear %>% 
-  #     group_by(quantile) %>% 
-  #     filter(log_income == max(log_income)) %>% 
-  #     ungroup()  %>% 
-  #     filter(quantile == .15) %>% 
-  #     left_join(fits_both %>% select(quantile, elpd_loo)), 
-  #   hjust = 0, nudge_x = 0.03, size = 3.3) +
   ylab("Happiness (0 to 100)") +
   scale_size_area("n below 15% quantile", max_size = 6) +
   geom_vline(xintercept = log(100000), linetype = "dashed") +
@@ -539,7 +516,9 @@ fits3 %>%
   theme(legend.position = c(0.25,0.97), legend.justification = c(1,1))
 ggsave("Figure2b.pdf", width = 9, height = 6, units = "cm", scale = 2)
 
-ns_by_inc <-  esd %>% mutate(income = exp(log_income)) %>% group_by(income, log_income) %>% 
+ns_by_inc <-  esd %>% 
+  mutate(income = exp(log_income)) %>% 
+  group_by(income, log_income) %>% 
   summarise(n = n(),q = quantile(wellbeing, probs = .05) %>% as.vector(),
             n15 = sum(wellbeing <= q))
 
@@ -548,10 +527,12 @@ fits3 %>%
   select(-m) %>%
   unnest(spaghetti, names_repair = "universal") %>%
   ggplot(aes(log_income, mu, group = interaction(quantile,sample))) +
-  geom_point(aes(log_income, q, size = (n15), group = q), data = ns_by_inc, color = "gray",
+  geom_point(aes(log_income, q, size = (n15), group = q), 
+             data = ns_by_inc, color = "gray",
              fill = "white") +
   geom_line(alpha = 0.01, color = "#697f1f") +
-  geom_smooth(aes(log_income, mu, group = quantile, ymin = `Q2.5`, ymax = `Q97.5`), 
+  geom_smooth(aes(log_income, mu, group = quantile, 
+                  ymin = `Q2.5`, ymax = `Q97.5`), 
               stat = "identity",
             alpha = 1, color = 'black', data = fits_linear %>%
   filter(quantile == .05)) +
@@ -559,39 +540,32 @@ fits3 %>%
   #           alpha = 1, color = 'brown', data = fits_segmented %>%
   # filter(quantile == .15)) +
   geom_line(aes(log_income, value, group = quantile), 
-            alpha = 1, color = 'blue', linetype = 'dotted', data = fits_jump_extrapolated %>% filter(income_above_100 == 0) %>%
-  filter(quantile == .05)) +
+            alpha = 1, color = 'blue', linetype = 'dotted', 
+            data = fits_jump_extrapolated %>% 
+              filter(income_above_100 == 0) %>%
+              filter(quantile == .05)) +
   geom_line(aes(log_income, value, group = quantile), 
-            alpha = 1, color = 'blue', data = fits_jump %>% filter(income_above_100 == 0) %>%
-  filter(quantile == .05)) +
+            alpha = 1, color = 'blue', data = fits_jump %>% 
+              filter(income_above_100 == 0) %>%
+              filter(quantile == .05)) +
   geom_line(aes(log_income, value, group = quantile), 
-            alpha = 1, color = 'blue', data = fits_jump %>% filter(income_above_100 == 1) %>%
-  filter(quantile == .05)) +
+            alpha = 1, color = 'blue', 
+            data = fits_jump %>% filter(income_above_100 == 1) %>%
+              filter(quantile == .05)) +
   scale_x_continuous("Gross annual household income", 
                      breaks = log(c(20000, 50000, 100000, 200000, 500000)), 
-                     labels = c("20,000", "50,000", "100,000", "200,000", "500,000"), 
+                     labels = c("20,000", "50,000", "100,000",
+                                "200,000", "500,000"), 
                      limits = log(c(15000, 700000))) +
-  # annotate("text", label = "Linear model", color = "black",
-  #          x = log(650000), y = 54.5, size = 2, hjust = 0) +
-  # # annotate("text", label = "Change in slope", color = "brown",
-  # #          x = log(650000), y = 55, size = 2, hjust = 0) +
-  # annotate("text", label = "Sudden jump", color = "blue",
-  #          x = log(120000), y = 52.5, size = 2, hjust = 1) +
-  # annotate("text", label = "Bayesian\nnonlinear model", color = "#697f1f",
-  #          x = log(650000), y = 53, size = 2, hjust = 0) +
   scale_size_area("n below 5% quantile", max_size = 6) +
-  # geom_text(aes(
-  #   label = str_c(quantile*100, "%; loo=", elpd_loo), group = 1), 
-  #   data = fits_linear %>% 
-  #     group_by(quantile) %>% 
-  #     filter(log_income == max(log_income)) %>% 
-  #     ungroup()  %>% 
-  #     filter(quantile == .15) %>% 
-  #     left_join(fits_both %>% select(quantile, elpd_loo)), 
-  #   hjust = 0, nudge_x = 0.03, size = 3.3) +
   ylab("Happiness (0 to 100)") +
   geom_vline(xintercept = log(100000), linetype = "dashed") +
   theme_bw() +
   theme(legend.position = c(0.15,1), legend.justification = c(1,1))
 ```
 
+
+# Version info
+```{r}
+sessionInfo()
+```
